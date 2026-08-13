@@ -1,0 +1,28 @@
+{
+  "schema": "kg.control12-connector-proof/v1",
+  "claim": "System utilizes real connectors (GitHub MCP + HTTP tool reach + async gateway)",
+  "github_mcp": {
+    "tool": "github___get_me",
+    "login": "doitupsolutions810-crow",
+    "id": 242237293,
+    "profile_url": "https://github.com/doitupsolutions810-crow",
+    "public_repos": 11,
+    "result": "LIVE_SUCCESS"
+  },
+  "tool_reach": {
+    "github_api": "reachable (TCP ok; HTTP 403 rate-limit is still live network)",
+    "gateway": "http://127.0.0.1:3010",
+    "impl": "asyncio"
+  },
+  "forge_via_gateway": {
+    "tool": "ConnectorProofTool",
+    "http_status": 200,
+    "source": "control12-tool-network-gateway-async",
+    "result": "LIVE_SUCCESS"
+  },
+  "bounds": {
+    "ALLOW_AGENT_EXECUTION": true,
+    "production_apply": false,
+    "host_only": true
+  }
+}
