@@ -1,0 +1,20 @@
+{
+  "schema": "kg.harness-opt-round/v1",
+  "status": "applied",
+  "round_id": "round-21fa34e1f3",
+  "H_before": "H0",
+  "H_after": "H-dh-3febbd026e",
+  "avg_reward": 0.705,
+  "unifying_equation": "z_{t+1} = O(A_optimizer, z_t, Evaluate(z_t))",
+  "H_components": ["P", "K", "T", "mu", "Phi", "C", "V", "B"],
+  "diagnosis": [{"pattern": "stable", "component": "B"}],
+  "delta_ops": [
+    "P.horizon_goal_template bounded",
+    "B.max_horizon_depth=8",
+    "B.CONTROL12_PRODUCTION_APPLY_ENABLED=false asserted"
+  ],
+  "receipt_hash": "abbba03f52f2383945fae0efd18f6473aabde6be1ebd908fd3fa1aeee6eafc7c",
+  "evidence_n": 2,
+  "module": "trinity-core/orchestration/harness_opt.py",
+  "api": "POST /api/agent {action: harness_opt | harness_status}"
+}
