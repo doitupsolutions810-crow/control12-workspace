@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CONTROL12 Workspace — ChatBot + Agent Orchestration</title>
+  <style>
+    :root { --bg:#07090d; --panel:rgba(16,22,32,.92); --border:#283447; --text:#edf2f7; --muted:#9cadbd; --accent:#7ac7ff; --green:#aee5c8; --warn:#f6c177; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:Inter,ui-sans-serif,system-ui,sans-serif; background:radial-gradient(circle at 15% 0,#17223a 0,#07090d 45%); color:var(--text); min-height:100vh; }
+    header { padding:20px 28px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+    .eyebrow { letter-spacing:.16em; font-size:.7rem; color:var(--accent); }
+    h1 { margin:4px 0 0; font-size:1.55rem; background:linear-gradient(90deg,#fff,#7ac7ff); -webkit-background-clip:text; color:transparent; }
+    .gate { font-size:.8rem; padding:6px 12px; border-radius:999px; border:1px solid var(--border); }
+    .gate.on { border-color:var(--green); color:var(--green); } .gate.off { border-color:var(--warn); color:var(--warn); }
+    main { display:grid; grid-template-columns:1.1fr 1fr; gap:16px; padding:16px 20px 32px; max-width:1400px; margin:0 auto; }
+    @media (max-width:960px){ main { grid-template-columns:1fr; } }
+    .panel { background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:16px; display:flex; flex-direction:column; min-height:380px; }
+    .panel h2 { margin:0 0 12px; font-size:1rem; color:var(--accent); }
+    #chat-log { flex:1; overflow-y:auto; background:#0a0f17; border-radius:10px; padding:12px; font-size:.9rem; line-height:1.45; margin-bottom:12px; border:1px solid var(--border); max-height:360px; }
+    .msg { margin-bottom:10px; } .msg.user { color:#c9e4ff; } .msg.assistant { color:var(--green); white-space:pre-wrap; }
+    .msg .meta { font-size:.7rem; color:var(--muted); }
+    .row { display:flex; gap:8px; }
+    input, textarea, select, button { font:inherit; border-radius:10px; border:1px solid var(--border); background:#0a0f17; color:var(--text); padding:10px 12px; }
+    input, textarea { width:100%; } textarea { min-height:80px; resize:vertical; }
+    button { cursor:pointer; background:#eaf7ff; color:#07101a; font-weight:700; border:0; white-space:nowrap; }
+    button:disabled { opacity:.5; } button.secondary { background:transparent; color:var(--accent); border:1px solid var(--border); }
+    #code-editor { font-family:ui-monospace,Menlo,monospace; font-size:.82rem; min-height:200px; }
+    .status-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:.8rem; }
+    .stat { background:#0a0f17; border:1px solid var(--border); border-radius:10px; padding:10px; }
+    .stat b { color:var(--accent); display:block; margin-bottom:4px; }
+    pre { margin:0; white-space:pre-wrap; word-break:break-word; color:var(--green); font-size:.75rem; max-height:140px; overflow:auto; }
+    footer { text-align:center; color:var(--muted); font-size:.75rem; padding:12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <div class="eyebrow">CONTROL12 LATTICE · TRINITY CORE</div>
+      <h1>Workspace — ChatBot + Agent Orchestration</h1>
+    </div>
+    <div id="gate-badge" class="gate off">Gate: checking…</div>
+  </header>
+  <main>
+    <section class="panel">
+      <h2>Agent ChatBot</h2>
+      <div id="chat-log"></div>
+      <div class="row">
+        <input id="chat-input" placeholder="Ask the CONTROL12 agent…" />
+        <button id="chat-send">Send</button>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>Coding Workspace</h2>
+      <div class="row" style="margin-bottom:8px">
+        <select id="file-select"></select>
+        <button class="secondary" id="load-file">Load</button>
+        <button id="save-file">Save</button>
+      </div>
+      <input id="code-path" placeholder="path e.g. tools/audit.py" style="margin-bottom:8px" />
+      <textarea id="code-editor" spellcheck="false"></textarea>
+    </section>
+    <section class="panel">
+      <h2>Forge Portable Tool (gated)</h2>
+      <input id="tool-name" placeholder="Tool name" value="Workspace Attestor" style="margin-bottom:8px" />
+      <textarea id="tool-desc">Portable tool that packages workspace artifacts under AttestPipe receipts.</textarea>
+      <input id="tool-caps" value="attest,package,verify" style="margin:8px 0" />
+      <button id="forge-btn">Forge Tool Spec</button>
+      <pre id="forge-out" style="margin-top:10px"></pre>
+    </section>
+    <section class="panel">
+      <h2>System Status</h2>
+      <div class="status-grid">
+        <div class="stat"><b>Health</b><span id="st-health">…</span></div>
+        <div class="stat"><b>Gate</b><span id="st-gate">…</span></div>
+        <div class="stat"><b>Sessions / Receipts</b><span id="st-sess">…</span></div>
+        <div class="stat"><b>Forge URL</b><span id="st-forge">…</span></div>
+      </div>
+      <button class="secondary" id="refresh-status" style="margin-top:12px">Refresh Status</button>
+      <button class="secondary" id="run-cycle" style="margin-top:8px">Run Cycle Kernel Action</button>
+      <pre id="status-out" style="margin-top:10px"></pre>
+    </section>
+  </main>
+  <footer>CONTROL12 Workspace · AttestPipe · Cycle Kernel · Host-ONLY · Operational Bridge<br/>Production apply gated. Cryptographic governance, not promises.</footer>
+  <script>
+    const $ = id => document.getElementById(id);
+    let sessionId = null;
+    async function api(path, opts={}) {
+      const res = await fetch(path, { headers: {'content-type':'application/json', ...(opts.headers||{})}, ...opts });
+      const data = await res.json().catch(()=>({}));
+      if (!res.ok) throw new Error(data.detail || res.statusText);
+      return data;
+    }
+    function addMsg(role, text, meta) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + role;
+      div.innerHTML = `<div class="meta">${role}${meta?' · '+meta:''}</div>${String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;')}`;
+      $('chat-log').appendChild(div);
+      $('chat-log').scrollTop = $('chat-log').scrollHeight;
+    }
+    async function sendChat() {
+      const msg = $('chat-input').value.trim(); if (!msg) return;
+      $('chat-input').value = '';
+      addMsg('user', msg);
+      try {
+        const data = await api('/api/chat', { method:'POST', body: JSON.stringify({ message: msg, session_id: sessionId }) });
+        sessionId = data.session_id;
+        addMsg('assistant', data.reply, data.receipt ? 'attested '+(data.receipt.receipt_hash||'').slice(0,12) : '');
+      } catch(e) { addMsg('assistant', 'Error: '+e.message); }
+    }
+    async function refreshStatus() {
+      try {
+        const h = await api('/api/health'); const s = await api('/api/status');
+        $('st-health').textContent = h.ok ? 'ok' : 'down';
+        $('st-gate').textContent = h.gate_satisfied ? 'OPEN' : 'closed';
+        $('st-sess').textContent = (s.sessions||0)+' / '+(s.receipts||0);
+        $('st-forge').textContent = s.forge_url || '—';
+        const badge = $('gate-badge');
+        badge.textContent = h.gate_satisfied ? 'Gate: OPEN' : 'Gate: CLOSED';
+        badge.className = 'gate ' + (h.gate_satisfied ? 'on' : 'off');
+        $('status-out').textContent = JSON.stringify({ files: s.files, bridge: s.bridge?.bridge || s.bridge }, null, 2);
+        const sel = $('file-select'); sel.innerHTML = '';
+        (s.files||[]).forEach(f => { const o=document.createElement('option'); o.value=f; o.textContent=f; sel.appendChild(o); });
+      } catch(e) { $('status-out').textContent = String(e); }
+    }
+    async function loadFile() {
+      const path = $('file-select').value || $('code-path').value; if (!path) return;
+      const data = await api('/api/code/'+encodeURIComponent(path));
+      $('code-path').value = data.path; $('code-editor').value = data.content;
+    }
+    async function saveFile() {
+      const path = $('code-path').value.trim(); const content = $('code-editor').value;
+      if (!path) return alert('Path required');
+      await api('/api/code', { method:'PUT', body: JSON.stringify({ path, content }) });
+      await refreshStatus(); alert('Saved '+path);
+    }
+    async function forgeTool() {
+      $('forge-out').textContent = 'Forging…';
+      try {
+        const data = await api('/api/tools/forge', { method:'POST', body: JSON.stringify({
+          name: $('tool-name').value, description: $('tool-desc').value,
+          capabilities: $('tool-caps').value.split(',').map(s=>s.trim()).filter(Boolean)
+        })});
+        $('forge-out').textContent = JSON.stringify(data, null, 2);
+      } catch(e) { $('forge-out').textContent = 'Error: '+e.message; }
+    }
+    async function runCycle() {
+      try {
+        const data = await api('/api/agent', { method:'POST', body: JSON.stringify({ action:'cycle', payload:{ data:{source:'ui'}, decision:{action:'observe'} }}) });
+        $('status-out').textContent = JSON.stringify(data, null, 2);
+      } catch(e) { $('status-out').textContent = 'Error: '+e.message; }
+    }
+    $('chat-send').onclick = sendChat;
+    $('chat-input').addEventListener('keydown', e => { if (e.key==='Enter') sendChat(); });
+    $('refresh-status').onclick = refreshStatus;
+    $('load-file').onclick = loadFile;
+    $('save-file').onclick = saveFile;
+    $('forge-btn').onclick = forgeTool;
+    $('run-cycle').onclick = runCycle;
+    refreshStatus();
+    addMsg('assistant', 'CONTROL12 Workspace online.\nChat · Code · Forge tools under AttestPipe + Cycle Kernel.\nSet ALLOW_AGENT_EXECUTION=true for privileged actions.');
+  </script>
+</body>
+</html>
