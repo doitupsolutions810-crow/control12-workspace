@@ -1,0 +1,29 @@
+{
+  "schema": "kg.control12-portable-tool/v1",
+  "status": "attested_intent_ready_for_forge",
+  "tool": {
+    "name": "Workspace Attestor v1",
+    "description": "Portable CONTROL12 tool that packages workspace session receipts and coding artifacts under AttestPipe chained hashes. Host-ONLY safe. Used by the published ChatBot orchestration workspace.",
+    "capabilities": ["attest", "package", "verify", "export_receipt", "workspace_bind"],
+    "inputs": {"artifact": "binary"},
+    "outputs": {"receipt": "json"},
+    "constraints": ["bounded payload", "no embedded secrets", "host-only preferred"],
+    "locale": "en-US"
+  },
+  "attestation": {
+    "receipt_hash": "4b3004ca6283cf2cd37abe73ed35e037",
+    "note": "Full hash and merkle/epoch fields generated at runtime under ALLOW_AGENT_EXECUTION; see local trinity-core storage for chain continuity."
+  },
+  "cycle_id": "cycle-0-7832724a",
+  "host_gate": {
+    "allowed": true,
+    "action": "forge_submit",
+    "host_only": true,
+    "network": "denied_implicit"
+  },
+  "forge_endpoint": "http://localhost:3001/api/forge",
+  "control12": {
+    "lattice": "Control12-Avrone-DueKrey",
+    "bounds": "Host-ONLY, no implicit network, production apply gated"
+  }
+}
