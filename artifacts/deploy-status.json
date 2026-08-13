@@ -1,0 +1,13 @@
+{
+  "schema": "kg.control12-deploy/v1",
+  "mode": "process",
+  "status": "DEPLOY_OK",
+  "surfaces": {
+    "workspace": "http://127.0.0.1:8080/",
+    "vm_browser": "http://127.0.0.1:8080/vm-browser",
+    "dashboard": "http://127.0.0.1:8080/dashboard",
+    "gateway": "http://127.0.0.1:3010/api/health"
+  },
+  "health": {"gateway": 200, "workspace": 200, "vm_browser": 200},
+  "gate": {"ALLOW_AGENT_EXECUTION": true, "production_apply": false, "host_only": true}
+}
