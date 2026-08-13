@@ -1,0 +1,12 @@
+{
+  "schema": "kg.control12-release/v1",
+  "version": "1.0.0-ship",
+  "saas_ready_flags": {
+    "auth_token_env": "CONTROL12_API_TOKEN",
+    "tenant_header": "X-Tenant-Id",
+    "rate_limit": true,
+    "metrics": true,
+    "tls": "terminate_at_proxy",
+    "production_apply": false
+  }
+}
