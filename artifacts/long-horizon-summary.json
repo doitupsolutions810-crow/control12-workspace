@@ -1,0 +1,20 @@
+{
+  "schema": "kg.long-horizon-result/v1",
+  "status": "completed",
+  "plan_id": "plan-3989f353b6b1",
+  "goal": "Full long-horizon: attest, energy, learn, cycle, host-gate, forge, codex, quarantine",
+  "depth": 8,
+  "steps": [
+    {"name": "attest_goal", "status": "completed", "receipt_hash": "1b5af1914e09f07a9c02a92b0cd651da8af7d82471be474a7d9fd0c96ebcc4c8"},
+    {"name": "brain_energy_deploy", "status": "completed"},
+    {"name": "brain_recursive_learn", "status": "completed"},
+    {"name": "cycle_decide", "status": "completed", "receipt_hash": "e89f1770b71d86793d20a8d5b63942799f0df38f1aa5f533b92cd42e8aa2a61c", "cycle_id": "cycle-0-66f72ccb"},
+    {"name": "host_only_gate", "status": "completed"},
+    {"name": "forge_package_intent", "status": "completed", "receipt_hash": "e5472a82ea8b79f00a6c7e062e77b31f7481877fe8e6edd42722136736628d41", "cycle_id": "cycle-1-ea156be7"},
+    {"name": "codex_persist", "status": "completed"},
+    {"name": "quarantine_check", "status": "completed"}
+  ],
+  "forge_http": "unreachable",
+  "brain_shard_count": 4,
+  "note": "All steps executed real Trinity Core components under ALLOW_AGENT_EXECUTION. FORGE HTTP unreachable until docker compose is up; intent and receipts remain real and durable."
+}
