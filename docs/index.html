@@ -27,7 +27,7 @@
   <header>
     <div class="badge">CONTROL12 · Public portal</div>
     <h1>Operator Portal</h1>
-    <p class="sub">This page is public on GitHub. The live ChatBot API runs on <strong>your machine or VPS</strong> — not on this static site. Use the steps below to get a URL that works on your phone.</p>
+    <p class="sub">Public entry on GitHub. Live ChatBot API runs on <strong>your machine or VPS</strong>. Use the steps below for a phone-reachable URL.</p>
   </header>
   <main>
     <div class="card">
@@ -35,40 +35,36 @@
       <div class="row">
         <a class="btn" href="https://github.com/doitupsolutions810-crow/control12-workspace" target="_blank" rel="noopener">GitHub repo</a>
         <a class="btn" href="https://github.com/doitupsolutions810-crow/control12-workspace/tree/main/artifacts" target="_blank" rel="noopener">Artifacts</a>
-        <a class="btn" href="https://github.com/doitupsolutions810-crow/control12-workspace/blob/main/artifacts/CLOUD_DEPLOY.md" target="_blank" rel="noopener">Cloud deploy guide</a>
+        <a class="btn" href="https://github.com/doitupsolutions810-crow/control12-workspace/blob/main/artifacts/CLOUD_DEPLOY.md" target="_blank" rel="noopener">Cloud deploy</a>
         <a class="btn" href="https://github.com/doitupsolutions810-crow/control12-workspace/blob/main/artifacts/OPERATE_NOW.md" target="_blank" rel="noopener">Operate guide</a>
       </div>
     </div>
     <div class="card">
-      <h2>Why localhost links failed</h2>
-      <p class="sub"><code>127.0.0.1</code> only works on the computer running the server. The build sandbox is not your phone. This portal is the public entry point; the API is started with the commands below.</p>
+      <h2>GitHub Pages setup (one time)</h2>
+      <p class="sub">Repo → Settings → Pages → Build and deployment → Source: <strong>GitHub Actions</strong>. After the workflow runs:</p>
+      <pre>https://doitupsolutions810-crow.github.io/control12-workspace/</pre>
     </div>
     <div class="card">
-      <h2>Get a phone-reachable URL (fastest)</h2>
-      <pre>git clone https://github.com/doitupsolutions810-crow/control12-workspace.git
-export ALLOW_AGENT_EXECUTION=true
-./run.sh   # or scripts/deploy.sh process
-
-npx localtunnel --port 8080
-# or: cloudflared tunnel --url http://localhost:8080
-# or: ngrok http 8080</pre>
-      <p class="sub">Open the <strong>https</strong> URL the tunnel prints on your phone.</p>
+      <h2>Phone-reachable ChatBot URL</h2>
+      <pre>export ALLOW_AGENT_EXECUTION=true
+./run.sh
+npx localtunnel --port 8080</pre>
+      <p class="sub">Open the https URL from the tunnel on your phone.</p>
     </div>
     <div class="card">
-      <h2>VPS public IP</h2>
-      <pre>cd c12-ship
-export ALLOW_AGENT_EXECUTION=true
+      <h2>VPS</h2>
+      <pre>export ALLOW_AGENT_EXECUTION=true
 export CONTROL12_API_TOKEN=$(openssl rand -hex 32)
 ./run.sh
-# open http://YOUR_VPS_IP:8080/</pre>
+# http://YOUR_VPS_IP:8080/</pre>
     </div>
     <div class="card">
-      <h2>ChatBot commands (once API is up)</h2>
+      <h2>ChatBot commands</h2>
       <pre>/help /status /reach /cycle /forge MyTool /spawn MyLattice /dashboard</pre>
     </div>
     <div class="card">
       <h2>Status</h2>
-      <p class="sub">Ship <strong>1.0.0-ship</strong> · T0–T2 procurement · Host-ONLY · production apply default off · SaaS token via CONTROL12_API_TOKEN</p>
+      <p class="sub">Ship <strong>1.0.0-ship</strong> · Procurement T0–T2 · Host-ONLY · production apply default off</p>
     </div>
   </main>
 </body>
