@@ -11,9 +11,13 @@ on:
         required: false
         default: lab
         type: choice
-        options:
-          - lab
-          - commercial
+        options: [lab, commercial]
+      runner:
+        description: hosted ubuntu-24.04 or self-hosted control12
+        required: false
+        default: hosted
+        type: choice
+        options: [hosted, self-hosted]
 
 permissions:
   contents: read
@@ -24,12 +28,13 @@ concurrency:
 
 jobs:
   check:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.runner == 'self-hosted' && fromJSON('["self-hosted","linux","control12"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v4
       - name: Inventory workspace
         run: |
           echo "mode=${{ github.event.inputs.mode || 'push' }}"
+          echo "runner_input=${{ github.event.inputs.runner || 'hosted' }}"
           echo "runner=${RUNNER_NAME:-none} os=${RUNNER_OS:-none}"
           ls -la
       - name: Fail closed if commercial secrets missing
@@ -41,6 +46,7 @@ jobs:
           fi
 
   slim-probe:
+    if: ${{ github.event.inputs.runner != 'self-hosted' }}
     runs-on: ubuntu-slim
     steps:
       - name: Report hosted slim pool
