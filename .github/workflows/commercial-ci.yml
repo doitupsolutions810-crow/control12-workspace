@@ -48,6 +48,7 @@ jobs:
   slim-probe:
     if: ${{ github.event.inputs.runner != 'self-hosted' }}
     runs-on: ubuntu-slim
+    continue-on-error: true
     steps:
       - name: Report hosted slim pool
         run: |
