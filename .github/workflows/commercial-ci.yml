@@ -1,0 +1,33 @@
+name: CONTROL12 Commercial CI
+on:
+  push:
+    branches: [main, commercial-v1]
+    paths: ['commercial/**']
+  pull_request:
+    paths: ['commercial/**']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: commercial
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: commercial/requirements.txt
+      - run: pip install -r requirements.txt
+      - run: python -m compileall app
+      - run: python -m pytest -q
+      - run: python scripts/package_release.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: control12-commercial-package
+          path: |
+            commercial/dist/*.zip
+            commercial/dist/*.sha256
+            commercial/dist/*.json
