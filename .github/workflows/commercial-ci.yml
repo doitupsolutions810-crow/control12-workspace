@@ -1,0 +1,40 @@
+name: CONTROL12 Commercial CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: lab or commercial
+        required: false
+        default: lab
+        type: choice
+        options:
+          - lab
+          - commercial
+
+permissions:
+  contents: read
+
+concurrency:
+  group: commercial-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inventory workspace
+        run: |
+          echo "mode=${{ github.event.inputs.mode || 'push' }}"
+          ls -la
+      - name: Fail closed if commercial secrets missing
+        if: ${{ github.event.inputs.mode == 'commercial' }}
+        run: |
+          if [ -z "${{ secrets.CONTAINER_KEY_BASE64 }}" ]; then
+            echo "FAIL_CLOSED: CONTAINER_KEY_BASE64 required for commercial mode"
+            exit 1
+          fi
