@@ -24,12 +24,13 @@ concurrency:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Inventory workspace
         run: |
           echo "mode=${{ github.event.inputs.mode || 'push' }}"
+          echo "runner=${RUNNER_NAME:-none} os=${RUNNER_OS:-none}"
           ls -la
       - name: Fail closed if commercial secrets missing
         if: ${{ github.event.inputs.mode == 'commercial' }}
@@ -38,3 +39,11 @@ jobs:
             echo "FAIL_CLOSED: CONTAINER_KEY_BASE64 required for commercial mode"
             exit 1
           fi
+
+  slim-probe:
+    runs-on: ubuntu-slim
+    steps:
+      - name: Report hosted slim pool
+        run: |
+          echo "runner=${RUNNER_NAME:-none} os=${RUNNER_OS:-none} arch=${RUNNER_ARCH:-none}"
+          uname -a
