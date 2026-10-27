@@ -20,6 +20,8 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
 # Optional: enable privileged agent actions
+export CONTROL12_BASIC_AUTH_USER=workspace-operator
+export CONTROL12_BASIC_AUTH_PASSWORD='<set-a-strong-secret>'
 export ALLOW_AGENT_EXECUTION=true
 export CONTROL12_FORGE_URL=http://localhost:3001
 
@@ -29,6 +31,12 @@ uvicorn main:app --host 0.0.0.0 --port 8080
 ```
 
 Open http://localhost:8080
+
+## Authentication boundary
+
+All routes except GET /api/health require HTTP Basic authentication configured with both CONTROL12_BASIC_AUTH_USER and CONTROL12_BASIC_AUTH_PASSWORD. If either value is absent, protected routes return HTTP 503 rather than silently running unauthenticated. Incorrect or missing credentials return HTTP 401.
+
+Use this only behind HTTPS or a trusted private ingress; Basic credentials are not encrypted by the authentication scheme itself. Keep credentials in the deployment secret manager, not in source control. ALLOW_AGENT_EXECUTION=true is an additional capability gate, not a substitute for authentication.
 
 ## API
 
