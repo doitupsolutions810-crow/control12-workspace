@@ -31,6 +31,27 @@ jobs:
     runs-on: ${{ inputs.runner == 'self-hosted' && fromJSON('["self-hosted","linux","control12"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v4
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Compile application
+        run: python -m compileall -q app
+      - name: Verify authentication boundary
+        env:
+          CONTROL12_BASIC_AUTH_USER: ci
+          CONTROL12_BASIC_AUTH_PASSWORD: ci-secret
+        run: |
+          set -euo pipefail
+          uvicorn main:app --app-dir app --host 127.0.0.1 --port 8080 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/api/health >/dev/null; then break; fi
+            sleep 1
+          done
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/status)" = "401"
+          test "$(curl -s -o /dev/null -w '%{http_code}' -u wrong:credentials http://127.0.0.1:8080/api/status)" = "401"
+          test "$(curl -s -o /dev/null -w '%{http_code}' -u ci:ci-secret http://127.0.0.1:8080/api/status)" = "200"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/health)" = "200"
       - name: Inventory workspace
         run: |
           echo "mode=${{ github.event.inputs.mode || 'push' }}"
