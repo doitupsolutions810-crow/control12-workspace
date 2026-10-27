@@ -16,6 +16,8 @@ Control704 VIP / Avrone Due’Krey / Control12-lattice-op authenticated path.
 
 from __future__ import annotations
 
+import base64
+import hmac
 import json
 import os
 import sys
@@ -41,6 +43,40 @@ app = FastAPI(
     description="ChatBot + Agent Orchestration Coding Workspace under Control12 Lattice",
     version="1.0.0",
 )
+
+# Protect every route except the deliberately minimal health probe with HTTP
+# Basic auth. Basic auth must be used only behind TLS or trusted private ingress.
+@app.middleware("http")
+async def require_workspace_auth(request: Request, call_next):
+    if request.url.path == "/api/health":
+        return await call_next(request)
+
+    expected_user = os.getenv("CONTROL12_BASIC_AUTH_USER", "")
+    expected_password = os.getenv("CONTROL12_BASIC_AUTH_PASSWORD", "")
+    if not expected_user or not expected_password:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "workspace authentication is not configured"},
+        )
+
+    authorization = request.headers.get("authorization", "")
+    supplied_user = supplied_password = ""
+    if authorization.startswith("Basic "):
+        try:
+            decoded = base64.b64decode(authorization[6:], validate=True).decode("utf-8")
+            supplied_user, supplied_password = decoded.split(":", 1)
+        except (ValueError, UnicodeDecodeError):
+            pass
+
+    user_ok = hmac.compare_digest(supplied_user, expected_user)
+    password_ok = hmac.compare_digest(supplied_password, expected_password)
+    if not (user_ok and password_ok):
+        return JSONResponse(
+            status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="CONTROL12 Workspace", charset="UTF-8"'},
+            content={"detail": "authentication required"},
+        )
+    return await call_next(request)
 
 _sessions: Dict[str, List[Dict[str, Any]]] = {}
 _receipts: List[Dict[str, Any]] = []
@@ -94,14 +130,8 @@ async def index():
 
 @app.get("/api/health")
 async def health():
-    return {
-        "ok": True,
-        "service": "control12-workspace",
-        "version": "1.0.0",
-        "gate": "ALLOW_AGENT_EXECUTION",
-        "gate_satisfied": _gate_ok(),
-        "time": time.time(),
-    }
+    # Keep the unauthenticated health endpoint deliberately low-information.
+    return {"ok": True, "service": "control12-workspace", "version": "1.0.0"}
 
 
 @app.get("/api/status")
