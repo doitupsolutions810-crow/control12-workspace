@@ -1,0 +1,73 @@
+--- a/avrone/core.py
++++ b/avrone/core.py
+@@ -255,7 +255,11 @@
+     try:
+         if body.startswith((b"\xef\xbb\xbf", b"\xff\xfe", b"\xfe\xff")):
+             raise ValueError("ambiguous Unicode byte-order mark")
+-        value = json.loads(body, object_pairs_hook=no_duplicates, parse_constant=no_constants)
++        # Never allow json.loads(bytes) to guess UTF-16/UTF-32. A caller and a
++        # downstream consumer could otherwise interpret the same signed bytes
++        # under different character encodings. JSON ingress is UTF-8 only.
++        decoded = body.decode("utf-8", "strict")
++        value = json.loads(decoded, object_pairs_hook=no_duplicates, parse_constant=no_constants)
+         stack = [(value, 0)]
+         while stack:
+             item, depth = stack.pop()
+@@ -475,7 +479,7 @@
+                     await task
+             engine.dispose()
+ 
+-    app = FastAPI(title="AVRONE CONTROL12 hardened", version="0.26.2", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
++    app = FastAPI(title="AVRONE CONTROL12 hardened", version="0.26.4", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+     app.state.engine = engine
+     app.state.factory = factory
+ 
+@@ -505,13 +509,33 @@
+                 return JSONResponse({"detail": "invalid permission set"}, status_code=401)
+             if len(sig) != 64 or any(c not in "0123456789abcdefABCDEF" for c in sig):
+                 return JSONResponse({"detail": "invalid signature"}, status_code=401)
+-            if request.headers.get("content-length"):
+-                length = int(request.headers["content-length"])
+-                if length > max_body_bytes:
++            # Reject ambiguous message framing even on trusted ingress. A
++            # negative or signed Content-Length must never bypass the early
++            # bound, and conflicting TE/CL frames must not be forwarded.
++            lengths = request.headers.getlist("content-length")
++            if len(lengths) > 1 or (lengths and request.headers.get("transfer-encoding")):
++                return JSONResponse({"detail": "ambiguous message framing"}, status_code=401)
++            declared_length = None
++            if lengths:
++                raw_length = lengths[0]
++                if (not raw_length or len(raw_length) > 16 or
++                        not raw_length.isascii() or not raw_length.isdecimal()):
++                    return JSONResponse({"detail": "malformed content length"}, status_code=401)
++                declared_length = int(raw_length)
++                if declared_length > max_body_bytes:
+                     return JSONResponse({"detail": "request body too large"}, status_code=413)
+-            body = await request.body()
+-            if len(body) > max_body_bytes:
+-                return JSONResponse({"detail": "request body too large"}, status_code=413)
++            # Bound bytes WHILE reading: streaming/chunked requests may omit a
++            # trustworthy Content-Length. Never materialize an unbounded body.
++            buffer = bytearray()
++            async for chunk in request.stream():
++                if len(chunk) > max_body_bytes - len(buffer):
++                    return JSONResponse({"detail": "request body too large"}, status_code=413)
++                buffer.extend(chunk)
++            body = bytes(buffer)
++            if declared_length is not None and len(body) != declared_length:
++                return JSONResponse({"detail": "content length mismatch"}, status_code=400)
++            # Preserve the verified exact bytes for FastAPI's downstream parser.
++            request._body = body
+             query = request.scope.get("query_string", b"").decode("latin-1")
+             want = signature(secret, request.method, request.url.path, query,
+                              tenant, principal, scopes, timestamp, nonce, body)
+@@ -542,7 +566,7 @@
+ 
+     @app.get("/health/live")
+     def live():
+-        return {"status": "alive", "version": "0.26.2"}
++        return {"status": "alive", "version": "0.26.4"}
+ 
+     @app.get("/health/ready")
+     def ready():
