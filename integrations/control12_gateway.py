@@ -123,7 +123,7 @@ class Control12Gateway:
         method, allowed_path, required_scope = _OPERATIONS[operation]
         if not re.fullmatch(allowed_path, path):
             raise ValueError("path not permitted")
-        if required_scope not in self.scopes:
+        if required_scope not in self.scopes and "admin:*" not in self.scopes:
             raise PermissionError("missing " + required_scope)
         if method == "GET" and payload is not None:
             raise ValueError("GET body is not permitted")
