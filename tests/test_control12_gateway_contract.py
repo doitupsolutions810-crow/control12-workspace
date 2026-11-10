@@ -134,9 +134,9 @@ def test_malformed_remote_json_fails_closed(data):
 
 
 @pytest.mark.parametrize("identity,principal,scopes", [
-    ("t\\x00n", "host", ["mission:write"]),
+    ("t" + chr(0) + "n", "host", ["mission:write"]),
     ("", "host", ["mission:write"]),
-    ("tenant", "host\\n", ["mission:write"]),
+    ("tenant", "host" + chr(10), ["mission:write"]),
     ("tenant", "", ["mission:write"]),
     ("tenant", "host", []),
     ("tenant", "host", ["bad scope"]),
