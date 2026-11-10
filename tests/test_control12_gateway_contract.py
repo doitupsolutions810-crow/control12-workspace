@@ -114,3 +114,73 @@ def test_rejects_unserializable_payload_without_network():
             adapter.call("create_mission", "/v1/missions", {"budget": float("nan")})
     finally:
         adapter.close()
+
+
+@pytest.mark.parametrize("data", [
+    b'{"x":NaN}', b'{"x":1e999}', b'{"bad":"\\ud800"}',
+    b'\\xff\\xfe'.replace(b'\\xff', bytes([255])).replace(b'\\xfe', bytes([254])),
+    b'{"data":' + b'[' * 65 + b'0' + b']' * 65 + b'}',
+])
+def test_malformed_remote_json_fails_closed(data):
+    adapter = Control12Gateway("https://runtime.example", KEY, "tenant-a", "host",
+                               ["mission:write"],
+                               transport=httpx.MockTransport(lambda req: httpx.Response(200, content=data)))
+    try:
+        with pytest.raises(GatewayError) as error:
+            adapter.call("create_mission", "/v1/missions", {"name": "trial"})
+        assert error.value.ambiguous
+    finally:
+        adapter.close()
+
+
+@pytest.mark.parametrize("identity,principal,scopes", [
+    ("t\\x00n", "host", ["mission:write"]),
+    ("", "host", ["mission:write"]),
+    ("tenant", "host\\n", ["mission:write"]),
+    ("tenant", "", ["mission:write"]),
+    ("tenant", "host", []),
+    ("tenant", "host", ["bad scope"]),
+])
+def test_invalid_signing_identities_are_rejected(identity, principal, scopes):
+    with pytest.raises(ValueError):
+        Control12Gateway("https://runtime.example", KEY, identity, principal, scopes)
+
+
+def test_refuses_oversized_request_before_network():
+    adapter = Control12Gateway("https://runtime.example", KEY, "tenant", "host", ["mission:write"])
+    try:
+        with pytest.raises(ValueError):
+            adapter.call("create_mission", "/v1/missions", {"objective": "a" * 300000})
+    finally:
+        adapter.close()
+
+
+def test_disconnection_marks_only_writes_ambiguous():
+    def disconnect(request):
+        raise httpx.ConnectError("injected connection failure")
+    adapter = Control12Gateway("https://runtime.example", KEY, "tenant", "host",
+                               ["mission:write", "telemetry:read"],
+                               transport=httpx.MockTransport(disconnect))
+    try:
+        with pytest.raises(GatewayError) as write:
+            adapter.call("create_mission", "/v1/missions", {"name": "trial"})
+        assert write.value.ambiguous
+        with pytest.raises(GatewayError) as read:
+            adapter.call("telemetry", "/v1/telemetry")
+        assert not read.value.ambiguous
+    finally:
+        adapter.close()
+
+
+def test_compressed_response_is_refused():
+    adapter = Control12Gateway(
+        "https://runtime.example", KEY, "tenant", "host", ["mission:write"],
+        transport=httpx.MockTransport(lambda req: httpx.Response(
+            200, content=b'{"ok":true}', headers={"content-encoding": "gzip"})),
+    )
+    try:
+        with pytest.raises(GatewayError) as failure:
+            adapter.call("create_mission", "/v1/missions", {"name": "trial"})
+        assert failure.value.ambiguous
+    finally:
+        adapter.close()
