@@ -25,6 +25,7 @@ _OPERATIONS = {
     "create_task": ("POST", r"/v1/missions/[0-9a-fA-F-]{36}/tasks", "mission:write"),
     "get_task": ("GET", r"/v1/tasks/[0-9a-fA-F-]{36}", "mission:read"),
     "get_receipts": ("GET", r"/v1/receipts/[A-Za-z0-9._-]{16,128}", "mission:read"),
+    "reconcile_mission": ("GET", r"/v1/missions/[0-9a-fA-F-]{36}/reconcile", "mission:read"),
     "claim_next": ("POST", r"/v1/tasks/claim-next", "tasks:execute"),
     "submit_bid": ("POST", r"/v1/tasks/[0-9a-fA-F-]{36}/bids", "tasks:execute"),
     "award": ("POST", r"/v1/tasks/[0-9a-fA-F-]{36}/award", "mission:write"),
@@ -126,6 +127,9 @@ class Control12Gateway:
             raise ValueError("path not permitted")
         if required_scope not in self.scopes and "admin:*" not in self.scopes:
             raise PermissionError("missing " + required_scope)
+        if (operation == "reconcile_mission" and "audit:read" not in self.scopes
+                and "admin:*" not in self.scopes):
+            raise PermissionError("missing audit:read")
         if method == "GET" and payload is not None:
             raise ValueError("GET body is not permitted")
         if idempotency_key is not None:
