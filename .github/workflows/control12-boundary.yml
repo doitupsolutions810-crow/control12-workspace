@@ -10,6 +10,9 @@ on:
       - "tests/test_control12_v0266_receipt_signatures.py"
       - "tests/test_control12_v0267_settlement_contract.py"
       - "tests/test_control12_v0268_reaward_contract.py"
+      - "integrations/patches/CONTROL12_v0267_to_v0268_core.patch"
+      - "integrations/migrations/0005_v0268_original_award_ceiling.sql"
+      - "docs/CONTROL12_V0268_COMPETITIVE_RECOVERY_EVIDENCE.md"
       - ".github/workflows/control12-boundary.yml"
   pull_request:
     paths:
@@ -20,6 +23,9 @@ on:
       - "tests/test_control12_v0266_receipt_signatures.py"
       - "tests/test_control12_v0267_settlement_contract.py"
       - "tests/test_control12_v0268_reaward_contract.py"
+      - "integrations/patches/CONTROL12_v0267_to_v0268_core.patch"
+      - "integrations/migrations/0005_v0268_original_award_ceiling.sql"
+      - "docs/CONTROL12_V0268_COMPETITIVE_RECOVERY_EVIDENCE.md"
       - ".github/workflows/control12-boundary.yml"
   workflow_dispatch:
 
