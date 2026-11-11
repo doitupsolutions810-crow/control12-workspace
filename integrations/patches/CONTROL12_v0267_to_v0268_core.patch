@@ -1,0 +1,114 @@
+--- a/avrone/core.py
++++ b/avrone/core.py
+@@ -91,6 +91,8 @@
+         ForeignKeyConstraint(["tenant", "agent_id"], ["agents.tenant", "agents.id"],
+                              name="fk_tasks_tenant_agent"),
+         CheckConstraint("cap BETWEEN 1 AND 2000000000", name="ck_tasks_cap_range"),
++        CheckConstraint("original_cap BETWEEN 1 AND 2000000000 AND original_cap >= cap",
++                        name="ck_tasks_original_cap"),
+         CheckConstraint("priority BETWEEN 0 AND 1000000", name="ck_tasks_priority_range"),
+         CheckConstraint("attempts >= 0", name="ck_tasks_attempts_nonnegative"),
+         CheckConstraint("actual IS NULL OR actual >= 0", name="ck_tasks_actual_nonnegative"),
+@@ -105,6 +107,10 @@
+     payload: Mapped[dict] = mapped_column(JSON, default=dict)
+     requirements: Mapped[list] = mapped_column(JSON, default=list)
+     cap: Mapped[int] = mapped_column(Integer)
++    # Original operator-approved maximum; keep it even when the award is cheaper.
++    # The insert-time fallback preserves hand-built Task fixtures in old tests.
++    original_cap: Mapped[int] = mapped_column(
++        Integer, nullable=False, default=lambda ctx: ctx.get_current_parameters()["cap"])
+     priority: Mapped[int] = mapped_column(Integer, default=0)
+     status: Mapped[str] = mapped_column(String(16))
+     agent_id: Mapped[str | None] = mapped_column(ForeignKey("agents.id"))
+@@ -374,7 +380,8 @@
+ 
+ def task_out(t):
+     return dict(id=t.id, mission_id=t.mission_id, title=t.title, payload=t.payload,
+-                requirements=t.requirements, cap=t.cap, priority=t.priority, status=t.status,
++                requirements=t.requirements, cap=t.cap, original_cap=t.original_cap,
++                priority=t.priority, status=t.status,
+                 assigned_agent_id=t.agent_id, attempts=t.attempts, expires=t.expires,
+                 result=t.result, error_code=t.error_code, actual=t.actual)
+ 
+@@ -623,7 +630,7 @@
+                     await task
+             engine.dispose()
+ 
+-    app = FastAPI(title="AVRONE CONTROL12 hardened", version="0.26.7", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
++    app = FastAPI(title="AVRONE CONTROL12 hardened", version="0.26.8", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+     app.state.engine = engine
+     app.state.factory = factory
+ 
+@@ -732,7 +739,7 @@
+ 
+     @app.get("/health/live")
+     def live():
+-        return {"status": "alive", "version": "0.26.7"}
++        return {"status": "alive", "version": "0.26.8"}
+ 
+     @app.get("/health/ready")
+     def ready():
+@@ -758,11 +765,14 @@
+                 settlement_fks = {c.get("name") for c in inspector.get_foreign_keys("settlement_receipts")}
+                 if "fk_settlement_tenant_task" not in settlement_fks:
+                     raise RuntimeError("missing tenant-bound settlement FK")
++                task_columns = {column["name"] for column in inspector.get_columns("tasks")}
++                if "original_cap" not in task_columns:
++                    raise RuntimeError("missing original task award ceiling")
+                 check_names = {constraint.get("name") for constraint in inspector.get_check_constraints("tasks")}
+-                if not {"ck_tasks_status", "ck_tasks_priority_range"}.issubset(check_names):
++                if not {"ck_tasks_status", "ck_tasks_priority_range", "ck_tasks_original_cap"}.issubset(check_names):
+                     raise RuntimeError("missing task state constraints")
+         except Exception:
+-            raise HTTPException(503, "database schema unavailable or missing migrations through v0.26.7")
++            raise HTTPException(503, "database schema unavailable or missing migrations through v0.26.8")
+         return {"status": "ready"}
+ 
+     @app.post("/v1/agents", status_code=201)
+@@ -846,7 +856,8 @@
+                 if data.cap > m.budget-m.reserved-m.spent:
+                     raise HTTPException(409, "insufficient mission budget")
+                 t = Task(id=uid(), mission_id=m.id, tenant=ident.tenant, title=data.title,
+-                         payload=data.payload, requirements=data.requirements, cap=data.cap,
++                         payload=data.payload, requirements=data.requirements,
++                         cap=data.cap, original_cap=data.cap,
+                          priority=data.priority, status="queued" if m.mode == "cooperative" else "bidding",
+                          attempts=0, updated=now())
+                 m.reserved += t.cap
+@@ -895,8 +906,8 @@
+             a = worker(db, ident)
+             if not capable(a, t):
+                 raise HTTPException(403, "agent lacks required capability")
+-            if data.cost > t.cap:
+-                raise HTTPException(422, "bid exceeds task budget cap")
++            if data.cost > t.original_cap:
++                raise HTTPException(422, "bid exceeds original task budget cap")
+             bid = db.scalar(select(Bid).where(Bid.task_id == t.id, Bid.agent_id == a.id))
+             if bid:
+                 if bid.status != "submitted":
+@@ -928,16 +939,23 @@
+             if m.mode != "competitive" or m.status != "open" or t.status != "bidding":
+                 raise HTTPException(409, "task cannot be awarded")
+             bids_ = list(db.scalars(select(Bid).where(Bid.task_id == t.id, Bid.status == "submitted").with_for_update()))
++            # The current reservation may have fallen after a cheap award.
++            # A later re-award may raise it, but ONLY within the original
++            # approved ceiling and the mission's still-available funds.
++            available_for_task = m.budget - m.spent - m.reserved + t.cap
+             valid = []
+             for b in bids_:
+                 a = db.get(Agent, b.agent_id)
+-                if a and a.enabled and a.tenant == ident.tenant and capable(a, t) and b.cost <= t.cap:
++                if (a and a.enabled and a.tenant == ident.tenant and capable(a, t)
++                        and b.cost <= t.original_cap and b.cost <= available_for_task):
+                     valid.append((b.cost, load(db, a), a.id, b, a))
+             if not valid:
+                 raise HTTPException(409, "no eligible bid")
+             valid.sort(key=lambda x: (x[0], x[1], x[2]))
+             cost, _, _, winning_bid, winning_agent = valid[0]
+-            m.reserved -= t.cap-cost
++            # The delta may be positive (new award costs more) or negative.
++            # Locking the mission serializes the change with other allocations.
++            m.reserved += cost-t.cap
+             t.cap = cost
+             t.agent_id = winning_agent.id
+             t.status = "assigned"
