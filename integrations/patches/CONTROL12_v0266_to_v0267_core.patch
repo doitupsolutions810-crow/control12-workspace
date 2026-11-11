@@ -108,6 +108,14 @@
                  check_names = {constraint.get("name") for constraint in inspector.get_check_constraints("tasks")}
                  if not {"ck_tasks_status", "ck_tasks_priority_range"}.issubset(check_names):
                      raise RuntimeError("missing task state constraints")
+@@ -699,6 +761,6 @@
+                 check_names = {constraint.get("name") for constraint in inspector.get_check_constraints("tasks")}
+                 if not {"ck_tasks_status", "ck_tasks_priority_range"}.issubset(check_names):
+                     raise RuntimeError("missing task state constraints")
+         except Exception:
+-            raise HTTPException(503, "database schema unavailable or missing v0.26.2 constraints")
++            raise HTTPException(503, "database schema unavailable or missing migrations through v0.26.7")
+         return {"status": "ready"}
 @@ -944,21 +1006,42 @@
              audit(db, ident, "task.renewed", t.mission_id, t.id)
          return task_out(t)
