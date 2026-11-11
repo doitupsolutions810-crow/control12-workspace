@@ -1,0 +1,161 @@
+--- a/avrone/core.py
++++ b/avrone/core.py
+@@ -169,6 +169,29 @@
+     created: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, nullable=False)
+ 
+ 
++class SettlementReceipt(Base):
++    """Immutable, lease-secret-bound settlement ACK. No plaintext lease is persisted."""
++    __tablename__ = "settlement_receipts"
++    __table_args__ = (
++        UniqueConstraint("tenant", "task_id", name="uq_settlement_one_per_task"),
++        CheckConstraint("length(lease_hash) = 64", name="ck_settlement_lease_digest"),
++        CheckConstraint("length(payload_sha256) = 64", name="ck_settlement_payload_digest"),
++        CheckConstraint("outcome IN ('succeeded','failed')", name="ck_settlement_outcome"),
++        ForeignKeyConstraint(["tenant", "task_id"], ["tasks.tenant", "tasks.id"],
++                             name="fk_settlement_tenant_task"),
++        Index("ix_settlement_principal", "tenant", "principal", "task_id"),
++    )
++    id: Mapped[str] = mapped_column(String(36), primary_key=True)
++    tenant: Mapped[str] = mapped_column(String(100), nullable=False)
++    principal: Mapped[str] = mapped_column(String(120), nullable=False)
++    task_id: Mapped[str] = mapped_column(String(36), nullable=False)
++    lease_hash: Mapped[str] = mapped_column(String(64), nullable=False)
++    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
++    payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
++    response_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
++    created: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, nullable=False)
++
++
+ class Audit(Base):
+     __tablename__ = "audit"
+     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+@@ -446,6 +469,39 @@
+     with db.begin():
+         return existing_receipt(db, ident, path, key, digest)
+ 
++def settlement_payload_digest(data, outcome):
++    # Never hash/store lease token as ordinary JSON; bind it separately by SHA-256.
++    data_fields = data.model_dump(mode="json", exclude={"lease_token"})
++    encoded = json.dumps({"outcome": outcome, "data": data_fields}, sort_keys=True,
++                         ensure_ascii=False, separators=(",", ":"), allow_nan=False)
++    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
++
++
++def existing_settlement(db, ident, task_id, data, outcome):
++    """Only a byte-identical lease owner and canonical payload may replay."""
++    row = db.scalar(select(SettlementReceipt).where(
++        SettlementReceipt.tenant == ident.tenant,
++        SettlementReceipt.task_id == task_id).with_for_update())
++    if row is None:
++        return None
++    candidate = hashlib.sha256(data.lease_token.encode("utf-8")).hexdigest()
++    digest = settlement_payload_digest(data, outcome)
++    if (row.principal != ident.principal or
++            not hmac.compare_digest(row.lease_hash, candidate) or
++            row.outcome != outcome or
++            not hmac.compare_digest(row.payload_sha256, digest)):
++        raise HTTPException(409, "task settlement conflict")
++    return row.response_payload
++
++
++def save_settlement(db, ident, t, data, outcome, response):
++    db.add(SettlementReceipt(id=uid(), tenant=ident.tenant, principal=ident.principal,
++                             task_id=t.id, lease_hash=hashlib.sha256(data.lease_token.encode()).hexdigest(),
++                             outcome=outcome, payload_sha256=settlement_payload_digest(data, outcome),
++                             response_payload=response))
++    db.flush()
++
++
+ def settlement(db, ident, t, actual, outcome, result=None, error_code=None):
+     m = get_mission(db, ident, t.mission_id, lock=True)
+     if actual > t.cap:
+@@ -567,7 +623,7 @@
+                     await task
+             engine.dispose()
+ 
+-    app = FastAPI(title="AVRONE CONTROL12 hardened", version="0.26.6", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
++    app = FastAPI(title="AVRONE CONTROL12 hardened", version="0.26.7", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+     app.state.engine = engine
+     app.state.factory = factory
+ 
+@@ -676,13 +732,13 @@
+ 
+     @app.get("/health/live")
+     def live():
+-        return {"status": "alive", "version": "0.26.6"}
++        return {"status": "alive", "version": "0.26.7"}
+ 
+     @app.get("/health/ready")
+     def ready():
+         try:
+             with factory() as db:
+-                for table in ("agents", "missions", "tasks", "bids", "used_nonces", "audit", "creation_receipts"):
++                for table in ("agents", "missions", "tasks", "bids", "used_nonces", "audit", "creation_receipts", "settlement_receipts"):
+                     db.execute(text(f"SELECT 1 FROM {table} LIMIT 1"))
+                 inspector = inspect(db.connection())
+                 required_fks = {
+@@ -696,6 +752,12 @@
+                 receipt_constraints = {c.get("name") for c in inspector.get_unique_constraints("creation_receipts")}
+                 if "uq_creation_receipt_identity" not in receipt_constraints:
+                     raise RuntimeError("missing creation receipt uniqueness invariant")
++                settlement_unique = {c.get("name") for c in inspector.get_unique_constraints("settlement_receipts")}
++                if "uq_settlement_one_per_task" not in settlement_unique:
++                    raise RuntimeError("missing settlement uniqueness invariant")
++                settlement_fks = {c.get("name") for c in inspector.get_foreign_keys("settlement_receipts")}
++                if "fk_settlement_tenant_task" not in settlement_fks:
++                    raise RuntimeError("missing tenant-bound settlement FK")
+                 check_names = {constraint.get("name") for constraint in inspector.get_check_constraints("tasks")}
+                 if not {"ck_tasks_status", "ck_tasks_priority_range"}.issubset(check_names):
+                     raise RuntimeError("missing task state constraints")
+@@ -944,21 +1006,42 @@
+             audit(db, ident, "task.renewed", t.mission_id, t.id)
+         return task_out(t)
+ 
++
++    def apply_settlement(db, ident, task_id, data, outcome):
++        """Serializes acknowledgement replay with the original ledger mutation."""
++        t = get_task(db, ident, task_id, lock=True)
++        if t.status in ("succeeded", "failed"):
++            replay = existing_settlement(db, ident, t.id, data, outcome)
++            if replay is not None:
++                return replay, True
++            raise HTTPException(409, "task already settled; no receipt exists")
++        t = verify_lease(db, ident, task_id, data.lease_token)
++        settlement(db, ident, t, data.actual, outcome,
++                   result=data.result if outcome == "succeeded" else None,
++                   error_code=data.error_code if outcome == "failed" else None)
++        response = task_out(t)
++        save_settlement(db, ident, t, data, outcome, response)
++        return response, False
++
+     @app.post("/v1/tasks/{task_id}/complete")
+-    def complete(task_id: str, data: CompleteIn, ident=Depends(auth), db: Session=Depends(session)):
++    def complete(task_id: str, data: CompleteIn, response: Response,
++                 ident=Depends(auth), db: Session=Depends(session)):
+         check(ident, "tasks:execute")
+         with db.begin():
+-            t = verify_lease(db, ident, task_id, data.lease_token)
+-            settlement(db, ident, t, data.actual, "succeeded", result=data.result)
+-        return task_out(t)
++            result, replayed = apply_settlement(db, ident, task_id, data, "succeeded")
++        if replayed:
++            response.headers["Idempotent-Replayed"] = "true"
++        return result
+ 
+     @app.post("/v1/tasks/{task_id}/fail")
+-    def fail(task_id: str, data: FailIn, ident=Depends(auth), db: Session=Depends(session)):
++    def fail(task_id: str, data: FailIn, response: Response,
++             ident=Depends(auth), db: Session=Depends(session)):
+         check(ident, "tasks:execute")
+         with db.begin():
+-            t = verify_lease(db, ident, task_id, data.lease_token)
+-            settlement(db, ident, t, data.actual, "failed", error_code=data.error_code)
+-        return task_out(t)
++            result, replayed = apply_settlement(db, ident, task_id, data, "failed")
++        if replayed:
++            response.headers["Idempotent-Replayed"] = "true"
++        return result
+ 
+     @app.get("/v1/telemetry")
+     def telemetry(ident=Depends(auth), db: Session=Depends(session)):
