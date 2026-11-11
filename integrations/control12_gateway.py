@@ -1,7 +1,7 @@
-"""Trusted service-to-CONTROL12 v0.26.2 HMAC gateway adapter.
+"""Trusted service-to-CONTROL12 v0.26.6 HMAC gateway adapter.
 
 Host-only integration. Do not expose signer keys or this class to agents.
-Write requests are NOT automatically retried: this API has no creation idempotency.
+Writes are never automatically retried; keyed mission/task creation may be replayed explicitly on v0.26.6+.
 """
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ _OPERATIONS = {
     "list_missions": ("GET", r"/v1/missions", "mission:read"),
     "create_task": ("POST", r"/v1/missions/[0-9a-fA-F-]{36}/tasks", "mission:write"),
     "get_task": ("GET", r"/v1/tasks/[0-9a-fA-F-]{36}", "mission:read"),
+    "get_receipts": ("GET", r"/v1/receipts/[A-Za-z0-9._-]{16,128}", "mission:read"),
     "claim_next": ("POST", r"/v1/tasks/claim-next", "tasks:execute"),
     "submit_bid": ("POST", r"/v1/tasks/[0-9a-fA-F-]{36}/bids", "tasks:execute"),
     "award": ("POST", r"/v1/tasks/[0-9a-fA-F-]{36}/award", "mission:write"),
@@ -117,7 +118,7 @@ class Control12Gateway:
     def close(self):
         self.http.close()
 
-    def call(self, operation, path, payload=None):
+    def call(self, operation, path, payload=None, *, idempotency_key=None):
         if operation not in _OPERATIONS:
             raise ValueError("operation not permitted")
         method, allowed_path, required_scope = _OPERATIONS[operation]
@@ -127,6 +128,11 @@ class Control12Gateway:
             raise PermissionError("missing " + required_scope)
         if method == "GET" and payload is not None:
             raise ValueError("GET body is not permitted")
+        if idempotency_key is not None:
+            if (operation not in {"create_mission", "create_task"} or
+                    not isinstance(idempotency_key, str) or
+                    re.fullmatch(r"[A-Za-z0-9._-]{16,128}", idempotency_key) is None):
+                raise ValueError("invalid idempotency key or unsupported operation")
         try:
             body = (b"" if payload is None else
                     json.dumps(payload, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8", "strict"))
@@ -138,6 +144,8 @@ class Control12Gateway:
         perms = ",".join(sorted(self.scopes))
         msg = "\n".join((method, path, "", self.tenant, self.principal, perms,
                          timestamp, nonce, hashlib.sha256(body).hexdigest()))
+        if idempotency_key is not None:
+            msg += "\nidempotency-key:" + idempotency_key
         sig = hmac.new(self.secret.encode(), msg.encode(), hashlib.sha256).hexdigest()
         headers = {
             "x-avrone-tenant": self.tenant, "x-avrone-principal": self.principal,
@@ -147,6 +155,8 @@ class Control12Gateway:
         }
         if body:
             headers["content-type"] = "application/json"
+        if idempotency_key is not None:
+            headers["Idempotency-Key"] = idempotency_key
         try:
             with self.http.stream(method, self.origin + path, content=body, headers=headers) as resp:
                 if resp.is_redirect or resp.headers.get("content-encoding", "identity").lower() != "identity":
